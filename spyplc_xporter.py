@@ -80,9 +80,9 @@ El exporter nos va a dar el tiempo de procesamiento de esta estructura asi vemos
 import redis
 import time
 import prometheus_client as prom
-from spyplc_config import Config
 import pickle
 import numpy as np
+from FUNCAUX.config import Config
 
 
 class SPYSTATS():

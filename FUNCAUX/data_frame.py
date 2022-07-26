@@ -1,10 +1,12 @@
 #!/opt/anaconda3/envs/mlearn/bin/python3
 
-from spyplc_log import log
 from datetime import datetime
-from spyplc_bd_redis import BD_REDIS
 import sys
-import spyplc_stats
+from FUNCAUX import stats
+from FUNCAUX.log import log
+from FUNCAUX.bd_redis import BD_REDIS
+from FUNCAUX.mbus_write import mbusWrite
+
 # ------------------------------------------------------------------------------
 
 
@@ -19,8 +21,8 @@ class DATA_frame:
         self.rh = None
         self.response = ''
 
-        spyplc_stats.inc_count_frame()
-        spyplc_stats.inc_count_frame_data()
+        stats.inc_count_frame()
+        stats.inc_count_frame_data()
 
         log(module=__name__, function='__init__', level='SELECT',dlgid=self.dlgid, msg='start')
         return
@@ -31,8 +33,8 @@ class DATA_frame:
             print('Content-type: text/html\n\n',end='')
             print('<html><body><h1>{0}</h1></body></html>'.format(response))
         except Exception as e:
-            spyplc_stats.inc_count_errors()
-            log(module=__name__, function='u_send_response',level='ERROR',dlgid=self.dlgid,msg='EXCEPTION:[{0}]'.format(e))
+            stats.inc_count_errors()
+            log(module=__name__, function='u_send_response',level='ERROR',dlgid=self.dlgid,msg='EXCEPTION=[{0}]'.format(e))
             return
 
         log(module=__name__, function='send_response',level='SELECT',dlgid=self.dlgid, msg='RSP={0}'.format(response))
@@ -49,21 +51,25 @@ class DATA_frame:
             d = {k:v for (k, v) in [x.split(':') for x in self.query_string.split(';')]}
             d['RCVD'] = self.query_string
         except:
-            spyplc_stats.inc_count_errors()
+            stats.inc_count_errors()
             log(module=__name__, function='process',level='ERROR',msg='DECODE ERROR: QS={0}'.format(self.query_string))
 
         self.dlgid = d.get('ID', '00000')
         self.version = d.get('VER', 'R0.0.0')
-        log(module=__name__, function='process', level='SELECT',dlgid=self.dlgid, msg='DEBUG D={0}</br>'.format(d))
+        log(module=__name__, function='process', level='SELECT',dlgid=self.dlgid, msg='D={0}</br>'.format(d))
 
         self.rh = BD_REDIS()
 
         # Guardo el frame el Redis
         self.rh.enqueue_data_record(d)
 
-        # Preparo la respuesta y transmito. Agrego las ordenes para el PLC
+        # Preparo la respuesta y transmito. Agrego las ordenes MODBUS para el PLC
         self.response += '{};'.format(datetime.now().strftime('%y%m%d%H%M'))
-        self.response += self.rh.get_bcastline(self.dlgid)
+
+        # Copio de "lastMODBUS" a "MODBUS"
+        mbusWrite(self.dlgid)
+        # Agrego la linea MODBUS a la respuesta y borro.
+        self.response += self.rh.get_modbusline(self.dlgid, clear=True)
 
         self.send_response()
         sys.stdout.flush()

@@ -9,11 +9,21 @@ Created on Wed Aug 14 09:19:01 2019
 import logging
 import logging.handlers
 import ast
-from spyplc_config import Config
+from datetime import datetime
+from FUNCAUX.config import Config
 
-# ------------------------------------------------------------------------------
-def config_logger():
+# Variable global que indica donde logueo.
+# La configuro al inciar los programas
+
+#syslogmode = 'SYSLOG'
+syslogmode = 'XPROCESS'
+
+def config_logger( modo='SYSLOG'):
     # logging.basicConfig(filename='log1.log', filemode='a', format='%(asctime)s %(name)s %(levelname)s %(message)s', level = logging.DEBUG, datefmt = '%d/%m/%Y %H:%M:%S' )
+
+    global syslogmode
+    syslogmode = modo
+    #print('SYSLOGMODE={}'.format(syslogmode))
 
     logging.basicConfig(level=logging.DEBUG)
 
@@ -39,21 +49,37 @@ def log(module,function,dlgid='00000',level='INFO', msg=''):
     Se encarga de mandar la logfile el mensaje.
     Si el level es SELECT, dependiendo del dlgid se muestra o no
     Si console es ON se hace un print del mensaje
+    El flush al final de print es necesario para acelerar. !!!
     '''
     debug_dlgid = Config['DEBUG']['debug_dlg']
     debug_level = Config['DEBUG']['debug_level']
     dlevel = {'INFO':0, 'WARN':1, 'ALERT':2, 'ERROR':3, 'SELECT':4, 'DEBUG':5 }
 
+    debug_configurado = dlevel[ Config['DEBUG']['debug_level'] ]
+    debug_solicitado = dlevel[level]
+
+    #if syslogmode != 'SYSLOG':
+    #    print('SPY.py TEST[level={0}, debug_level={1}, dlgid={2}, debug_dlgid={3}'.format(level, debug_level, dlgid, debug_dlgid))
+
     # Si el nivel que trae es mayor de lo que debo loguar, salgo
-    if dlevel[level] > dlevel[debug_level]:
+    if debug_solicitado > debug_configurado:
         return
 
     # Los mensajes SELECT los logueo solo para los DLGID que estan en la lista de CONFIGURACION
-    if  (level == 'SELECT') and (dlgid == debug_dlgid ):
-        logging.info('SPY.py [{0}][{1}][{2}]:[{3}]'.format( dlgid,module,function,msg))
+    if  level == 'SELECT':
+        if dlgid == debug_dlgid :
+            if syslogmode == 'SYSLOG':
+                logging.info('SPY.py [{0}][{1}][{2}]:[{3}]'.format( dlgid,module,function,msg))
+            else:
+                print('{0} {1}:: [{2}][{3}][{4}]:[{5}]'.format( datetime.now(), syslogmode, dlgid, module, function, msg), flush=True)
+        return
+
     else:
         # El resto de los mensajes los logueo TODOS ( WARN,ALERT,ERROR etc)
-        logging.info('SPY.py [{0}][{1}][{2}]:[{3}]'.format( dlgid,module,function,msg))
+        if syslogmode == 'SYSLOG':
+            logging.info('SPY.py [{0}][{1}][{2}]:[{3}]'.format( dlgid,module,function,msg))
+        else:
+            print('{0} {1}:: [{2}][{3}][{4}]:[{5}]'.format( datetime.now(), syslogmode, dlgid, module, function, msg), flush=True)
 
     return
 

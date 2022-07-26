@@ -7,10 +7,12 @@ Acepta argumentos ( ver spyplc_test_xframe.py -h )
 
 import time
 import argparse
-
-from spyplc_sendframes import SENDFRAMES
+from FUNCAUX.sendframes import SENDFRAMES
+from FUNCAUX.log import config_logger, log
 
 if __name__ == '__main__':
+
+    config_logger('XFRAME')
     start = time.time()
     parser = argparse.ArgumentParser(description='Procesamiento de frames al servidor SPYPLC')
     parser.add_argument('-s','--server', dest='host', action='store', default = '127.0.0.1',

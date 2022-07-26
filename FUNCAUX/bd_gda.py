@@ -1,11 +1,12 @@
 #!/home/pablo/Spymovil/python/pyenv/ml/bin/python3
-import numpy as np
 
-from spyplc_config import Config
-from spyplc_log import log
+import numpy as np
 from sqlalchemy import create_engine
 from sqlalchemy import text
-import spyplc_stats
+from FUNCAUX import stats
+from FUNCAUX.config import Config
+from FUNCAUX.log import log
+
 
 class BD_GDA:
 
@@ -19,7 +20,7 @@ class BD_GDA:
 
     def connect(self):
         if self.connected :
-            spyplc_stats.inc_count_accesos_GDA()
+            stats.inc_count_accesos_GDA()
             return True
         # Engine
         try:
@@ -28,20 +29,20 @@ class BD_GDA:
             self.connected = False
             log(module=__name__, function='connect',level='ERROR',msg='ERROR: engine NOT created. ABORT !!')
             log(module=__name__, function='connect',level='ERROR', msg='ERROR: EXCEPTION {0}'.format(err_var))
-            spyplc_stats.inc_count_errors()
+            stats.inc_count_errors()
             return False
 
         # Connection
         try:
             self.conn = self.engine.connect()
             self.connected = True
-            spyplc_stats.inc_count_accesos_GDA()
+            stats.inc_count_accesos_GDA()
             return True
         except Exception as err_var:
             self.connected = False
             log(module=__name__, function='connect',level='ERROR',msg='ERROR: BDSPY NOT connected. ABORT !!')
             log(module=__name__, function='connect',level='ERROR',msg='ERROR: EXCEPTION {0}'.format(err_var))
-            spyplc_stats.inc_count_errors()
+            stats.inc_count_errors()
             return False
 
         return False
@@ -57,25 +58,26 @@ class BD_GDA:
         except Exception as err_var:
             log(module=__name__, function='exec_sql', level='ERROR', dlgid=dlgid, msg='ERROR: SQLQUERY: {0}'.format(sql))
             log(module=__name__, function='exec_sql', level='ERROR', dlgid=dlgid, msg='ERROR: EXCEPTION {0}'.format(err_var))
-            spyplc_stats.inc_count_errors()
+            stats.inc_count_errors()
             return
 
-        log(module=__name__, function='exec_sql', level='DEBUG', dlgid=dlgid, msg='QUERY={0}'.format(query))
+        log(module=__name__, function='exec_sql', level='SELECT', dlgid=dlgid, msg='QUERY={0}'.format(query))
         rp=None
         try:
             rp = self.conn.execute(query)
         except Exception as err_var:
+            '''
             if 'duplicate'.lower() in (str(err_var)).lower():
                 # Los duplicados no hacen nada malo. Se da mucho en testing.
                 log(module=__name__, function='exec_sql', level='WARN', dlgid=dlgid, msg='WARN {0}: Duplicated Key'.format(dlgid))
             else:
                 log(module=__name__, function='exec_sql', level='ERROR', dlgid=dlgid, msg='ERROR: {0}, EXCEPTION {1}'.format(dlgid, err_var))
-
+            '''
         return rp
 
     def insert_dlg_raw(self, dlgid, d ):
         # Inserta la linea tal cual se recibio.
-        log(module=__name__, function='insert_dlg_raw',level='DEBUG', dlgid=dlgid, msg='Start' )
+        log(module=__name__, function='insert_dlg_raw',level='SELECT', dlgid=dlgid, msg='Start' )
 
         # Inserto frame en la tabla de DATA.
         sql = """INSERT INTO dlg_raws (dlgid,fechasys, tipo, rxstr) VALUES ( '{0}', NOW(),'DATA','{1}')""" .format(dlgid, d.get('RCVD','EMPTY_LINE'))
@@ -83,7 +85,7 @@ class BD_GDA:
 
     def insert_dlg_data(self, dlgid, d ):
         # Inserta cada par key_value
-        log(module=__name__, function='insert_dlg_data', level='DEBUG', dlgid=dlgid, msg='Start')
+        log(module=__name__, function='insert_dlg_data', level='SELECT', dlgid=dlgid, msg='Start')
 
         # Inserto frame en la tabla de DATA.
         for key in d:
@@ -102,7 +104,7 @@ class BD_GDA:
 
     def insert_spx_datos(self, dlgid, d ):
         # Inserta cada par key_value
-        log(module=__name__, function='insert_spx_datos', level='DEBUG', dlgid=dlgid, msg='Start')
+        log(module=__name__, function='insert_spx_datos', level='SELECT', dlgid=dlgid, msg='Start')
 
         for key in d:
             if key in ['ID', 'RCVD', 'VER']:
@@ -123,7 +125,7 @@ class BD_GDA:
 
     def insert_spx_datos_online(self, dlgid, d ):
         # Inserta cada par key_value
-        log(module=__name__, function='insert_spx_datos_online', level='DEBUG', dlgid=dlgid, msg='Start')
+        log(module=__name__, function='insert_spx_datos_online', level='SELECT', dlgid=dlgid, msg='Start')
 
         for key in d:
             if key in ['ID', 'RCVD', 'VER']:
@@ -183,3 +185,39 @@ class BD_GDA:
         Y luego le copio el actual con la configuracion
         '''
         return d
+
+    def get_d_reenvios(self, dlgid):
+        '''
+        Lee la configuracion de los reenvios.
+        '''
+        log(module=__name__, function='get_d_reenvios', level='SELECT', dlgid=dlgid, msg='start')
+
+        sql = """SELECT dlg, medida, rem_mbus_slave, rem_mbus_regaddress, tipo,codec
+                FROM spx_reenvio_modbus as rm INNER JOIN spx_unidades as u ON rm.dlgid_id = u.id
+                WHERE u.dlgid = '{}'""".format(dlgid)
+        rp = self.exec_sql(dlgid, sql)
+        results = rp.fetchall()
+        log(module=__name__, function='get_d_reenvios', dlgid=dlgid, level='SELECT', msg='Reading conf from GDA.')
+
+        if results is None:
+            log(module=__name__, function='get_d_reenvios', dlgid=dlgid, level='SELECT', msg='No hay equipos remotos')
+            return None
+
+        # Armo un dict con keys que sean tuplas (dlgid, medida)
+        d = {}
+        for row in results:
+            #log(module=__name__, server=self.server, function='get_dlg_remotos', dlgid=dlgid, level='SELECT', msg="ROW={}".format(row))
+            dlg_rem, medida, mbus_slave, mbus_regaddr, tipo,codec = row
+            #log(module=__name__, server=self.server, function='get_dlg_remotos', dlgid=dlgid, level='SELECT', msg="dlg_rem={0},medida={1}, mbus_slave={2}, mbus_regaddr={3}, tipo={4},codec={5}".format(dlg_rem, medida, mbus_slave, mbus_regaddr, tipo, codec))
+            #d[dlg_rem, medida] = dict()
+            #d[dlg_rem,medida]['MBUS_SLAVE'] = mbus_slave
+            #d[dlg_rem,medida]['MBUS_REGADDR'] = mbus_regaddr
+            #d[dlg_rem,medida]['TIPO'] = tipo
+            #d[dlg_rem,medida]['CODEC'] = codec
+            if dlg_rem not in d:
+                d[dlg_rem] = {}
+            d[dlg_rem][medida] = {'MBUS_SLAVE': mbus_slave, 'MBUS_REGADDR': mbus_regaddr, 'TIPO': tipo, 'CODEC': codec}
+
+        log(module=__name__, function='get_d_reenvios', dlgid=dlgid, level='SELECT', msg='D_REMOTOS={0}'.format(d))
+        return d
+

@@ -68,7 +68,7 @@ def set_size_lqueue_data(qsize):
 
 
 def end():
-    from spyplc_bd_redis import BD_REDIS
+    from FUNCAUX.bd_redis import BD_REDIS
     bdr = BD_REDIS()
 
     d_statistics['end'] = time.perf_counter()
@@ -84,7 +84,7 @@ def end():
     pkl = pickle.dumps(d_statistics)
     bdr.save_statistics(pkl)
 
-    from spyplc_log import log
+    from FUNCAUX.log import log
 
     logMsg = (f"STATS: "
             f"dtime={d_statistics['duracion_frame']:.04f},"

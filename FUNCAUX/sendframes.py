@@ -4,9 +4,9 @@ Clase que genera frames con valore aleatorios para testing.
 Lee las magnitudes definidas para el datalogger de modo que los frames no den error al insertarlos en GDA
 '''
 
-from spyplc_bd_gda import BD_GDA
 import numpy as np
 import urllib.request
+from FUNCAUX.bd_gda import BD_GDA
 
 
 class SENDFRAMES:

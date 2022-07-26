@@ -12,7 +12,8 @@ from multiprocessing import Lock, Pool
 import argparse
 import signal
 import os
-from spyplc_sendframes import SENDFRAMES
+from FUNCAUX.sendframes import SENDFRAMES
+from FUNCAUX.log import config_logger
 
 POOL_PROCESOS = os.cpu_count()
 MAX_FRAMES_X_MIN_X_PROCESO = 200
@@ -126,6 +127,7 @@ def clt_C_handler(signum, frame):
 
 if __name__ == '__main__':
 
+    config_logger('XLOAD')
     signal.signal(signal.SIGINT, clt_C_handler)
 
     # Diccionario con variables generales para intercambiar entre funciones
