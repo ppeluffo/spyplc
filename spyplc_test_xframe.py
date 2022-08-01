@@ -16,19 +16,21 @@ if __name__ == '__main__':
     start = time.time()
     parser = argparse.ArgumentParser(description='Procesamiento de frames al servidor SPYPLC')
     parser.add_argument('-s','--server', dest='host', action='store', default = '127.0.0.1',
-                        help = 'IP del servidor al cual conectarse')
+                        help = 'IP del servidor al cual conectarse (127.0.0.1)')
     parser.add_argument('-p','--port', dest='port', action='store', default = '80',
-                        help = 'PORT del servidor al cual conectarse')
+                        help = 'PORT del servidor al cual conectarse (80)')
     parser.add_argument('-d','--dlgid', dest='dlgid', action='store', default = 'PABLO',
-                        help = 'ID del datalogger a usar')
+                        help = 'ID del datalogger a usar (PABLO)')
     parser.add_argument('-f','--fw', dest='fw_ver', action='store', default = '4.0.4b',
-                        help = 'Version del firmware a usar en los frames')
+                        help = 'Version del firmware a usar en los frames (4.0.4b)')
     parser.add_argument('-i','--script', dest='script', action='store', default = 'spyplc.py',
-                        help = 'Nombre del script a usar')
+                        help = 'Nombre del script a usar (spyplc.py)')
     parser.add_argument('-t','--path', dest='path', action='store', default = 'AUTOM',
-                        help = 'Nombre del directorio donde se encuentra el script a usar')
+                        help = 'Nombre del directorio donde se encuentra el script a usar (/AUTOM)')
+    parser.add_argument('-l','--payload', dest='payload', action='store', default = 'REAL',
+                        help = 'Tipo de payload a usar: real / random (real)')
     parser.add_argument('-v','--verbose', dest='verbose', action='count', default = 0,
-                        help = 'Verbose')
+                        help = 'Verbose 0/1: (0)')
 
     args = parser.parse_args()
     d_args = vars(args)
@@ -47,7 +49,11 @@ if __name__ == '__main__':
     else:
         sendframes.set_verbose(True)
 
-    sendframes.prepare_payload_template()
+    if d_args['payload'] == 'REAL':
+        sendframes.prepare_payload_template()
+    else:
+        sendframes.prepare_random_payload()
+
     sendframes.send()
 
     # Summary:

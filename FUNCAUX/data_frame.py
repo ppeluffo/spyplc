@@ -67,9 +67,9 @@ class DATA_frame:
         self.response += '{};'.format(datetime.now().strftime('%y%m%d%H%M'))
 
         # Copio de "lastMODBUS" a "MODBUS"
-        mbusWrite(self.dlgid)
+        #DEBUG mbusWrite(self.dlgid)
         # Agrego la linea MODBUS a la respuesta y borro.
-        self.response += self.rh.get_modbusline(self.dlgid, clear=True)
+        #DEBUG self.response += self.rh.get_modbusline(self.dlgid, clear=True)
 
         self.send_response()
         sys.stdout.flush()

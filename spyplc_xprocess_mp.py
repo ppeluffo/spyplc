@@ -166,7 +166,7 @@ def process_child(lines):
     stats.end()
 
 
-def process_master():
+def process_master_plc():
     '''
     Cada 15s lee la cantidad de datos de la cola de INITS y dispara un child por cada 100 registros.
     Hasta un maximo de 5 childs (pool)
@@ -264,7 +264,7 @@ if __name__ == '__main__':
     log(module=__name__, function='__init__', level='ALERT',  msg='XPROCESS START')
     log(module=__name__, function='__init__', level='ALERT', msg='XPROCESS: Redis server={0}'.format(Config['REDIS']['host']))
     log(module=__name__, function='__init__', level='ALERT', msg='XPROCESS: GDA url={0}'.format(Config['BDATOS']['url_gda_spymovil']))
-    p1 = Process(target=process_master)
+    p1 = Process(target=process_master_plc)
     p1.start()
     
     # Espero para siempre

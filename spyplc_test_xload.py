@@ -62,7 +62,10 @@ def child_process( i, d ):
         sendframes.set_verbose(True)
 
     # Genero el template del frame que voy a enviar
-    sendframes.prepare_payload_template()
+    if d_args['payload'] == 'REAL':
+        sendframes.prepare_payload_template()
+    else:
+        sendframes.prepare_random_payload()
 
     # Comienzo un ciclo infinito de envio de frames. En c/frame calculo valores instantaneos diferentes
     while True:
@@ -101,6 +104,8 @@ def process_arguments():
                         help='Nombre del directorio donde se encuentra el script a usar')
     parser.add_argument('-v', '--verbose', dest='verbose', action='count', default=0,
                         help='Verbose')
+    parser.add_argument('-l','--payload', dest='payload', action='store', default = 'REAL',
+                        help = 'Tipo de payload a usar: real / random (real)')
     parser.add_argument('-n', '--nro_frames_x_min', dest='frames_x_min', action='store', default=100,
                         help='Cantidad de frames por minuto')
 
