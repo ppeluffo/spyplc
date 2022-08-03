@@ -75,74 +75,140 @@ class BD_GDA:
             '''
         return rp
 
-    def insert_dlg_raw(self, dlgid, d ):
-        # Inserta la linea tal cual se recibio.
-        log(module=__name__, function='insert_dlg_raw',level='SELECT', dlgid=dlgid, msg='Start' )
+    def read_dlg_insert_data(self, data):
 
-        # Inserto frame en la tabla de DATA.
-        sql = """INSERT INTO dlg_raws (dlgid,fechasys, tipo, rxstr) VALUES ( '{0}', NOW(),'DATA','{1}')""" .format(dlgid, d.get('RCVD','EMPTY_LINE'))
+        config = {}
+
+        txdlg = ""
+        ldlg = []
+        for d in data:
+            if d['dlgid'] not in ldlg:
+                txdlg += "\'"+d['dlgid']+"\',"
+        txdlg = txdlg[:-1]
+
+        sql = """SELECT u.dlgid, i.ubicacion_id as ubicacion, uc.tipo_configuracion_id as medida, cp.value as nombre FROM spx_unidades AS u
+                INNER JOIN spx_instalacion AS i ON u.id = i.unidad_id
+                INNER JOIN spx_unidades_configuracion AS uc ON uc.dlgid_id = u.id
+                INNER JOIN spx_configuracion_parametros AS cp  ON cp.configuracion_id = uc.id
+                WHERE u.dlgid IN ({txdlg}) AND cp.parametro = 'NAME'
+                """.format(txdlg=txdlg)
+    
+        rp = self.exec_sql(txdlg, sql)
+        results = rp.fetchall()
+
+        log(module=__name__, function='read_dlg_insert_data', dlgid=txdlg, level='SELECT', msg='Reading conf from GDA.')
+        for row in results:     
+            dlgid, ubicacion_id, medida_id, nombre = row
+            if dlgid not in config: config[dlgid] = {}
+            config[dlgid]['ubicacion_id'] = ubicacion_id
+            config[dlgid][nombre] = medida_id
+        
+        return config
+
+    def insert_dlg_raw(self, data):
+        sql = """INSERT INTO dlg_raws (dlgid,fechasys, tipo, rxstr) VALUES """
+        for dd in data:
+            dlgid = dd['dlgid']
+            d = dd['data']
+
+            # Inserta la linea tal cual se recibio.
+            log(module=__name__, function='insert_dlg_raw',level='SELECT', dlgid=dlgid, msg='Start' )
+
+            # Inserto frame en la tabla de DATA.
+            sql += """( '{0}', NOW(),'DATA','{1}'),""" .format(dlgid, d.get('RCVD','EMPTY_LINE'))
+        sql = sql[:-1] + ' ON CONFLICT DO NOTHING'
         return self.exec_sql(dlgid, sql)
 
-    def insert_dlg_data(self, dlgid, d ):
-        # Inserta cada par key_value
-        log(module=__name__, function='insert_dlg_data', level='SELECT', dlgid=dlgid, msg='Start')
+    def insert_dlg_data(self, data ):
+        sql = """INSERT INTO dlg_data (dlgid,fechadata, tag, value) VALUES """
 
-        # Inserto frame en la tabla de DATA.
-        for key in d:
-            if key in ['ID', 'RCVD', 'VER']:
-                continue
-            value = d.get(key,'None')
-            if value != 'None':
-                try:
-                    fvalue = float(value)
-                except:
-                    favalue = np.NaN
+        for dd in data:
+            dlgid = dd['dlgid']
+            d = dd['data'] 
 
-            sql = """INSERT INTO dlg_data (dlgid,fechadata, tag, value) VALUES ('{0}',NOW(),'{1}','{2}')""" .format(dlgid, key, fvalue)
-            self.exec_sql(dlgid, sql)
+            # Inserta cada par key_value
+            log(module=__name__, function='insert_dlg_data', level='SELECT', dlgid=dlgid, msg='Start')
+
+            # Inserto frame en la tabla de DATA.
+            for key in d:
+                if key in ['ID', 'RCVD', 'VER']:
+                    continue
+                value = d.get(key,'None')
+                if value != 'None':
+                    try:
+                        fvalue = float(value)
+                    except:
+                        favalue = np.NaN
+
+                sql += """('{0}',NOW(),'{1}','{2}'),""" .format(dlgid, key, fvalue)
+        
+        sql = sql[:-1] + ' ON CONFLICT DO NOTHING'
+        self.exec_sql(dlgid, sql)
         return
 
-    def insert_spx_datos(self, dlgid, d ):
-        # Inserta cada par key_value
-        log(module=__name__, function='insert_spx_datos', level='SELECT', dlgid=dlgid, msg='Start')
+    def insert_spx_datos(self, data, allConfigs ):
+        sql = """INSERT INTO spx_datos (fechasys, fechadata, valor, medida_id, ubicacion_id ) VALUES """
+        for dd in data:
+            dlgid = dd['dlgid']
+            d = dd['data'] 
 
-        for key in d:
-            if key in ['ID', 'RCVD', 'VER']:
-                continue
-            value = d.get(key, 'None')
-            if value != 'None':
-                try:
-                    fvalue = float(value)
-                except:
-                    favalue = np.NaN
-            sql = """INSERT INTO spx_datos (fechasys, fechadata, valor, medida_id, ubicacion_id ) VALUES \
-                         ( now(),now(),'{0}',( SELECT uc.tipo_configuracion_id FROM spx_unidades AS u JOIN spx_unidades_configuracion \
-                         AS uc ON uc.dlgid_id = u.id JOIN spx_configuracion_parametros AS cp  ON cp.configuracion_id = uc.id WHERE \
-                         cp.parametro = 'NAME' AND cp.value = '{1}' AND u.dlgid = '{2}' ),( SELECT ubicacion_id FROM spx_instalacion \
-                         WHERE unidad_id = ( SELECT id FROM spx_unidades WHERE dlgid = '{2}')))""".format( fvalue, key, dlgid )
-            self.exec_sql(dlgid, sql)
+            # Inserta cada par key_value
+            log(module=__name__, function='insert_spx_datos', level='SELECT', dlgid=dlgid, msg='Start')
+            if dlgid in allConfigs:
+                for key in d:
+                    if key in ['ID', 'RCVD', 'VER']:
+                        continue
+                    value = d.get(key, 'None')
+                    if value != 'None':
+                        try:
+                            fvalue = float(value)
+                        except:
+                            favalue = np.NaN
+                    if key in allConfigs[dlgid]:
+                        medida_id = allConfigs[dlgid][key]
+                        ubicacion_id = allConfigs[dlgid]['ubicacion_id']
+                        sql += """   ( now(),now(),'{fvalue}',{medida_id},{ubicacion_id}),""".format( fvalue=fvalue, medida_id=medida_id, ubicacion_id=ubicacion_id)
+                    else: 
+                        log(module=__name__, function='insert_spx_datos', level='ERROR', dlgid=dlgid, msg='Not exist key {0} in config'.format(key))
+            else: 
+                log(module=__name__, function='insert_spx_datos', level='ERROR', dlgid=dlgid, msg='Not exist config')                
+
+        sql = sql[:-1] + ' ON CONFLICT DO NOTHING'
+        self.exec_sql(dlgid, sql)       
         return
 
-    def insert_spx_datos_online(self, dlgid, d ):
-        # Inserta cada par key_value
-        log(module=__name__, function='insert_spx_datos_online', level='SELECT', dlgid=dlgid, msg='Start')
+    def insert_spx_datos_online(self, data, allConfigs ):
+        sql = "INSERT INTO spx_online (fechasys, fechadata, valor, medida_id, ubicacion_id ) VALUES "
+        for dd in data:
+            dlgid = dd['dlgid']
+            d = dd['data'] 
 
-        for key in d:
-            if key in ['ID', 'RCVD', 'VER']:
-                continue
-            value = d.get(key, 'None')
-            if value != 'None':
-                try:
-                    fvalue = float(value)
-                except:
-                    favalue = np.NaN
+            # Inserta cada par key_value
+            log(module=__name__, function='insert_spx_datos_online', level='SELECT', dlgid=dlgid, msg='Start')
+            if dlgid in allConfigs:
+                for key in d:
+                    if key in ['ID', 'RCVD', 'VER']:
+                        continue
+                    value = d.get(key, 'None')
+                    if value != 'None':
+                        try:
+                            fvalue = float(value)
+                        except:
+                            favalue = np.NaN
 
-            sql = """INSERT INTO spx_online (fechasys, fechadata, valor, medida_id, ubicacion_id ) VALUES \
-                         ( now(),now(),'{0}',( SELECT uc.tipo_configuracion_id FROM spx_unidades AS u JOIN spx_unidades_configuracion \
-                         AS uc ON uc.dlgid_id = u.id JOIN spx_configuracion_parametros AS cp  ON cp.configuracion_id = uc.id WHERE \
-                         cp.parametro = 'NAME' AND cp.value = '{1}' AND u.dlgid = '{2}' ),( SELECT ubicacion_id FROM spx_instalacion \
-                         WHERE unidad_id = ( SELECT id FROM spx_unidades WHERE dlgid = '{2}')))""".format( fvalue, key, dlgid )
-            self.exec_sql(dlgid, sql)
+                    if key in allConfigs[dlgid]:
+                        medida_id = allConfigs[dlgid][key]
+                        ubicacion_id = allConfigs[dlgid]['ubicacion_id']
+                        sql += """
+                                    ( now(),now(),'{fvalue}',{medida_id},{ubicacion_id}),""".format( fvalue=fvalue, medida_id=medida_id, ubicacion_id=ubicacion_id)
+                    else: 
+                        log(module=__name__, function='insert_spx_datos', level='ERROR', dlgid=dlgid, msg='Not exist key {0} in config'.format(key))
+            else: 
+                log(module=__name__, function='insert_spx_datos', level='ERROR', dlgid=dlgid, msg='Not exist config')   
+                
+        sql = sql[:-1] + ' ON CONFLICT DO NOTHING'
+        self.exec_sql(dlgid, sql)    
+        self.exec_sql(dlgid, sql)
         return
 
     def read_dlg_conf(self, dlgid):

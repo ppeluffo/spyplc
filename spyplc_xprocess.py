@@ -1,19 +1,47 @@
 #!/usr/bin/python3 -u
 #!/opt/anaconda3/envs/mlearn/bin/python3
+'''
+Version 2.0 @ 2022-08-02:
+Ulises modifica para que se haga una insercion sola con todos los datos.
 
-from multiprocessing import Process, Pool, Lock
+Version 1.0:
+Servidor de procesamiento de frames recibidos de los PLC que están en la REDIS.
+El __main__ invoca a un proceso master.
+Este master crea un pool de processo child que quedan leyendo la REDIS.
+Si hay datos la sacan y procesan.
+'''
+import random
+from multiprocessing import Process, Pool, Lock, log_to_stderr, active_children
 import os
 import time
 import pickle
 import signal
+import logging
+
 from FUNCAUX.bd_redis import BD_REDIS
 from FUNCAUX.bd_gda import BD_GDA
 from FUNCAUX.log import config_logger, log
 from FUNCAUX import stats
 from FUNCAUX.config import Config
-from FUNCAUX.mbus_write import mbusWrite
+from FUNCAUX.utils import mbusWrite
 
+MAXPOOLSIZE=5
 DATABOUNDLESIZE=50
+
+
+def process_child_plc_test():
+    start = time.perf_counter()
+    pid = os.getpid()
+    #logger.info('process_child_plc START. pid={0}'.format(pid))
+    #with lock:
+    log(module=__name__, function='process_child_plc', level='INFO', msg='process_child_plc START. pid={0}'.format(pid))
+
+    time.sleep(random.randint(1,10))
+    elapsed = time.perf_counter() - start
+    #logger.info('process_child_plc END. pid={0}, elapsed={1}'.format(pid,elapsed))
+    #with lock:
+    log(module=__name__, function='process_child_plc', level='INFO', msg='process_child_plc END. pid={0}, elapsed={1}'.format(pid,elapsed))
+    exit (0)
 
 
 def procesar_reenvios(d_params):
@@ -80,56 +108,108 @@ def procesar_reenvios(d_params):
     return
 
 
-def process_test():
+def process_child_plc():
     '''
-    Recibe un boundle (array) de lineas pickled de un diccionario de los datos recibidos de un plc
-    d['RCVD']
-    d['ID']
-    d['VER']
-    d['varName']
+    Lee un bundle de lineas de redis.
+    Si esta vacia, espera
     '''
     pid = os.getpid()
-    log(module=__name__, function='process_test', level='INFO', msg='process_child START. pid={0}'.format(pid))
+    log(module=__name__, function='process_test_plc', level='INFO', msg='process_child_plc START. pid={0}'.format(pid))
 
     gda = BD_GDA()
     rh = BD_REDIS()
+
     while True:
-        qsize = rh.read_lqueue_length('LQ_PLCDATA')
-        if qsize > 0:
-            # Hay datos para procesar: arranco un worker.
-            start = time.perf_counter()
-            stats.init()
-            log(module=__name__, function='process_test', level='INFO', msg='Redis Queue size={0}'.format(qsize))
-            boundle = rh.lpop_lqueue('LQ_PLCDATA', DATABOUNDLESIZE)
-            for pkline in boundle:
-                d=pickle.loads(pkline)
-                dlgid = d.get('ID', 'SPY000')
 
+        boundle = rh.lpop_lqueue('LQ_PLCDATA', DATABOUNDLESIZE)
+        if boundle is not None:
+            qsize = len(boundle)
+            if qsize > 0:
+                # Hay datos para procesar: arranco un worker.
+                start = time.perf_counter()
+                stats.init()
+                log(module=__name__, function='process_test_plc', level='INFO', msg='({0}) process_child_plc: RQsize={1}'.format(pid,qsize))
+
+                # Version 2.0 Start.
+                data = []
+                for pkline in boundle:
+                    d=pickle.loads(pkline)
+                    dlgid = d.get('ID', 'SPY000')
+
+                    log(module=__name__, function='process_test', level='INFO', msg='pid={0},L={1}'.format(pid,pkline))
+                    
+                    data.append({
+                        'dlgid': dlgid,
+                        'data': d
+                    })
+ 
+                    # Automatismos
+                    # Guardo la linea recibida (d['RCVD']) en Redis en el campo 'LINE', para otros procesamientos
+                    rcvd_line = d.get('RCVD',"ERROR Line")
+                    rh.save_line(dlgid, rcvd_line)
+                    #
+                    # Broadcasting / Reenvio de datos
+                    d_params={'GDA':gda,'REDIS':rh,'DLGID':dlgid,'DATOS':d }
+                    procesar_reenvios(d_params)
+
+                
                 # Inserto en todas las tablas
-                gda.insert_dlg_raw( dlgid, d)
-                gda.insert_dlg_data( dlgid, d )
-                gda.insert_spx_datos( dlgid, d)
-                gda.insert_spx_datos_online( dlgid, d)
+                # Inserto todo en una sola consulta
+                allConfigs = gda.read_dlg_insert_data(data) 
+                gda.insert_dlg_raw( data )
+                gda.insert_dlg_data( data )
+                gda.insert_spx_datos( data, allConfigs )
+                gda.insert_spx_datos_online( data, allConfigs )
 
-                # Automatismos
-                # Guardo la linea recibida (d['RCVD']) en Redis en el campo 'LINE', para otros procesamientos
-                rcvd_line = d.get('RCVD',"ERROR Line")
-                rh.save_line(dlgid, rcvd_line)
-                #
-                # Broadcasting / Reenvio de datos
-                d_params={'GDA':gda,'REDIS':rh,'DLGID':dlgid,'DATOS':d }
-                procesar_reenvios(d_params)
+                # Version 2.0: End.
 
-            # Fin del procesamiento del bundle
-            elapsed = time.perf_counter() - start
-            log(module=__name__, function='process_test', level='INFO', msg='process_child END. pid={0}, elapsed={1}'.format(pid, elapsed))
-            stats.end()
+                # Fin del procesamiento del bundle
+                elapsed = time.perf_counter() - start
+                log(module=__name__, function='process_test_plc', level='INFO', msg='({0}) process_child_plc: round elapsed={1}'.format(pid, elapsed))
+                stats.end()
         #
         else:
-            log(module=__name__, function='process_test', level='INFO', msg='No hay datos en qRedis. Espero 5s....')
+            #log(module=__name__, function='process_test', level='INFO', msg='No hay datos en qRedis. Espero 5s....')
             time.sleep(5)
+
     #
     return
+
+
+def process_master_plc():
+    '''
+    https://stackoverflow.com/questions/25557686/python-sharing-a-lock-between-processes
+    https://bentyeh.github.io/blog/20190722_Python-multiprocessing-progress.html
+    '''
+    log(module=__name__, function='process_master_plc', level='INFO', msg='process_master_plc START')
+    plist = []
+    #logger.info(plist)
+    # Creo todos los procesos child.
+    while len(plist) < MAXPOOLSIZE:
+        p = Process(target=process_child_plc)
+        p.start()
+        plist.append(p)
+    '''
+    Quedo monitoreando los procesos: si alguno termina ( por errores cae ), levanto uno que lo reemplaza
+    '''
+    while True:
+        # Saco de la plist todos los procesos child que no este vivos
+        for i, p in enumerate(plist):
+            if not p.is_alive():
+                plist.pop(i)
+                log(module=__name__, function='process_master_plc', level='INFO', msg='process_master_plc: Proceso {0} not alive;removed. L={1}'.format(i,len(plist)))
+
+        log(module=__name__, function='process_master_plc', level='INFO', msg='process_master_plc: plistLength={0}'.format(len(plist)))
+
+        # Vuelvo a rellenar la lista de modo de tener el maximo de procesos corriendo siempre
+        while len(plist) < MAXPOOLSIZE:
+            log(module=__name__, function='process_master_plc', level='INFO', msg='process_master_plc: Agrego nuevo proceso')
+            p = Process(target=process_child_plc)
+            p.start()
+            plist.append(p)
+
+        log(module=__name__, function='process_master_plc', level='INFO', msg='process_master_plc: Sleep 5s ...')
+        time.sleep(5)
 
 
 def clt_C_handler(signum, frame):
@@ -140,14 +220,18 @@ if __name__ == '__main__':
 
     signal.signal(signal.SIGINT, clt_C_handler)
 
+    #logger = log_to_stderr(logging.DEBUG)
+
     # Arranco el proceso que maneja los inits
-    config_logger('TEST-XPROCESS')
+    config_logger('XPROCESS')
+    log(module=__name__, function='__init__', level='ALERT', msg='XPROCESS START')
+    log(module=__name__, function='__init__', level='ALERT',
+        msg='XPROCESS: Redis server={0}'.format(Config['REDIS']['host']))
+    log(module=__name__, function='__init__', level='ALERT',
+        msg='XPROCESS: GDA url={0}'.format(Config['BDATOS']['url_gda_spymovil']))
+    p1 = Process(target=process_master_plc)
+    p1.start()
 
-    log(module=__name__, function='xprocess', level='INFO', msg='Debug DLGID={0}'.format(Config['DEBUG']['debug_dlg']))
-    log(module=__name__, function='xprocess', level='INFO', msg='Debug LEVEL={0}'.format(Config['DEBUG']['debug_level']))
-
-    process_test()
+    # Espero para siempre
     while True:
         time.sleep(60)
-
-
