@@ -1,6 +1,6 @@
 #!/opt/anaconda3/envs/mlearn/bin/python3
 
-from datetime import datetime
+from datetime import datetime as dt
 import sys
 from FUNCAUX import stats
 from FUNCAUX.log import log
@@ -40,6 +40,21 @@ class DATA_frame:
         log(module=__name__, function='send_response',level='SELECT',dlgid=self.dlgid, msg='RSP={0}'.format(response))
         return
 
+    def convert_rcvd_line_to_old_format(self, d):
+        '''
+        Convierte la nueva linea recibida:
+        ID:PABLO;VER:4.0.4a;PA:3.21;PB:1.34;H:4.56;bt:10.11
+        al formato anterior:
+        DATE:220802;TIME:122441;PA:3.21;PB:1.34;H:4.56;bt:10.11
+        '''
+        rcvd_line = d.get('RCVD', "ERROR Line")
+        l = rcvd_line.split(d['VER']);
+        payload = l[1]  # ';PA:3.21;PB:1.34;H:4.56;bt:10.11'
+        # Agrego el time stamp
+        timestamp = dt.datetime.now().strftime("DATE:%02Y%02m%02d;TIME:%02H%02M")
+        rcvd_line_new_format = timestamp + payload
+        return (rcvd_line_new_format)
+
     def process(self):
         # Realizo todos los pasos necesarios en el payload para generar la respuesta al datalooger e insertar
         # los datos en GDA
@@ -60,6 +75,12 @@ class DATA_frame:
 
         self.rh = BD_REDIS()
 
+        # Automatismos
+        # Guardo la linea recibida (d['RCVD']) en Redis en el campo 'LINE', para otros procesamientos
+        # El formato debe ser igual al original.
+        rcvd_line_new_format = self.convert_rcvd_line_to_old_format(d)
+        rh.save_line(dlgid, rcvd_line_new_format)
+
         # Guardo el frame el Redis
         self.rh.enqueue_data_record(d)
 
@@ -70,6 +91,20 @@ class DATA_frame:
         #DEBUG mbusWrite(self.dlgid)
         # Agrego la linea MODBUS a la respuesta y borro.
         #DEBUG self.response += self.rh.get_modbusline(self.dlgid, clear=True)
+
+        #-----------------------------------------------------------------------------------
+        # Excepcion 001: Atencion a PLC de paysandu
+        l_equipos = ['CTRLPAY01', 'CTRLPAY02', 'CTRLPAY03', 'CTRLTEST01']
+        if self.dlgid in l_equipos:
+            sys.path.insert(1, '/datos/cgi-bin/spx/AUTOMATISMOS')
+            try:
+                import serv_APP_selection
+                serv_APP_selection.main(self.dlgid)
+            except:
+                self.response="ERROR LOAD MODULE serv_APP_selection"
+
+        # -----------------------------------------------------------------------------------
+
 
         self.send_response()
         sys.stdout.flush()

@@ -3,6 +3,17 @@
 #
 
 """
+-----------------------------------------------------------------------------------------------------
+Version: 1.0.1 @ 2022-08-05
+1) Excepcion 001:
+Se coloca en data_frame.py para el manejo de los PLC de PAYSANDU.
+2) La inserción del LINE a la redis se hace en spyplc.py y no en xprocess porque los automatismos (paysandú)
+   requieren que esta la linea insertada antes de ejecutarse
+3) En la redis la linea se inserta con el formato:
+LINE=DATE:220802;TIME:122441;UMOD:100;MOD:102;UFREQ:100;PS:0.00;QS:38.81;HC:3.92;VF:46.05;VC:0.00;VT:0.00;ST:20562;
+En spyplc_xprocess::process_child_plc, en la seccion Automatismos se invoca a  rh.save_line(dlgid, rcvd_line).
+
+-----------------------------------------------------------------------------------------------------
 Version: 1.0.0 @ 2022-07-01
 Este servidor solo atiende a los PLC que transmiten directo por medio de un router LTE.
 Solo hay un frame que es de datos.

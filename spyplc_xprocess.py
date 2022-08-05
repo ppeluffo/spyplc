@@ -17,6 +17,7 @@ import time
 import pickle
 import signal
 import logging
+import datetime as dt
 
 from FUNCAUX.bd_redis import BD_REDIS
 from FUNCAUX.bd_gda import BD_GDA
@@ -144,9 +145,7 @@ def process_child_plc():
                     })
  
                     # Automatismos
-                    # Guardo la linea recibida (d['RCVD']) en Redis en el campo 'LINE', para otros procesamientos
-                    rcvd_line = d.get('RCVD',"ERROR Line")
-                    rh.save_line(dlgid, rcvd_line)
+                    # La linea se guarda en redis ( LINE ) en spyplc.py
                     #
                     # Broadcasting / Reenvio de datos
                     d_params={'GDA':gda,'REDIS':rh,'DLGID':dlgid,'DATOS':d }
